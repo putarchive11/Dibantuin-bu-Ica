@@ -269,7 +269,7 @@
   /* ------------------------------ API ------------------------------ */
   function callApi(payload) {
     var ctrl = new AbortController();
-    var timer = setTimeout(function () { ctrl.abort(); }, 40000);
+    var timer = setTimeout(function () { ctrl.abort(); }, 65000);
     var headers = { 'Content-Type': 'application/json' };
     var code = read(KEY_CODE);
     if (code) headers['x-access-code'] = code;

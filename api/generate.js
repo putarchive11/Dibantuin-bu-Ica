@@ -7,7 +7,7 @@
  *
  * Environment variables (pilih salah satu penyedia AI):
  *   GEMINI_API_KEY     API key gratis dari aistudio.google.com (jika diisi, Gemini dipakai)
- *   GEMINI_MODEL       (opsional) default: gemini-3.8-flash
+ *   GEMINI_MODEL       (opsional) default: gemini-3.5-flash-lite
  *   ANTHROPIC_API_KEY  API key dari console.anthropic.com (dipakai jika GEMINI_API_KEY kosong)
  *   ANTHROPIC_MODEL    (opsional) default: claude-haiku-5-5
  *   ACCESS_CODE        (disarankan) kode akses agar kredit API tidak disalahgunakan
@@ -17,9 +17,9 @@
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 // Urutan model cadangan jika model utama tidak tersedia (404).
-const GEMINI_FALLBACKS = ['gemini-flash-latest', 'gemini-3.6-flash'];
+const GEMINI_FALLBACKS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.6-flash'];
 
 const POSITIVE = [
   'Enthusiastic', 'Positive', 'Shows initiative', 'Committed', 'Responsible', 'Articulate',
@@ -230,16 +230,19 @@ async function handler(req, res) {
   const { system, user } = buildPrompts(checked.value);
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 55000);
 
   try {
     let text = '';
 
     if (geminiKey) {
-      const callGemini = (model) => {
+      const callGemini = async (model, withThinking = true) => {
         const generationConfig = { maxOutputTokens: 8192, responseMimeType: 'application/json' };
-        if (/2\.5/.test(model) && /flash/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-        return fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
+        if (withThinking) {
+          if (/2\.5/.test(model) && /flash/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+          else if (/gemini-3/i.test(model)) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+        }
+        const resp = await fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiKey },
           body: JSON.stringify({
@@ -249,6 +252,9 @@ async function handler(req, res) {
           }),
           signal: controller.signal
         });
+        // Jika pengaturan thinking ditolak model ini, ulangi tanpa pengaturan itu.
+        if (resp.status === 400 && generationConfig.thinkingConfig) return callGemini(model, false);
+        return resp;
       };
 
       let r = await callGemini(GEMINI_MODEL);
