@@ -18,6 +18,7 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
 const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const GEMINI_FALLBACK_MODEL = 'gemini-flash-latest';
 
 const POSITIVE = [
   'Enthusiastic', 'Positive', 'Shows initiative', 'Committed', 'Responsible', 'Articulate',
@@ -234,35 +235,48 @@ async function handler(req, res) {
     let text = '';
 
     if (geminiKey) {
-      const url = GEMINI_API_URL + encodeURIComponent(GEMINI_MODEL) + ':generateContent';
-      const generationConfig = { maxOutputTokens: 4096, responseMimeType: 'application/json' };
-      if (/flash/i.test(GEMINI_MODEL)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      const callGemini = (model) => {
+        const generationConfig = { maxOutputTokens: 4096, responseMimeType: 'application/json' };
+        if (/flash/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        return fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: [{ role: 'user', parts: [{ text: user }] }],
+            generationConfig
+          }),
+          signal: controller.signal
+        });
+      };
 
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-goog-api-key': geminiKey
-        },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          generationConfig
-        }),
-        signal: controller.signal
-      });
+      let r = await callGemini(GEMINI_MODEL);
+      // Model tidak ditemukan / sudah pensiun: coba alias model Flash terbaru.
+      if ((r.status === 404 || r.status === 400) && GEMINI_MODEL !== GEMINI_FALLBACK_MODEL) {
+        const probe = await r.clone().text().catch(() => '');
+        if (r.status === 404 || /model/i.test(probe)) r = await callGemini(GEMINI_FALLBACK_MODEL);
+      }
+      // Server Gemini sibuk sesaat: coba sekali lagi.
+      if (r.status === 503 || r.status === 500) r = await callGemini(GEMINI_MODEL);
 
       if (!r.ok) {
+        let detail = '';
+        try {
+          const j = await r.json();
+          detail = clean((j && j.error && j.error.message) || '', 160);
+        } catch (e) { /* abaikan */ }
+        console.error('Gemini error', r.status, detail);
+        const tag = ' (Gemini ' + r.status + (detail ? ': ' + detail : '') + ')';
         if (r.status === 401 || r.status === 403) {
-          return send(res, 500, { error: 'The Gemini API key is invalid or has no access.' });
+          return send(res, 500, { error: 'The Gemini API key is invalid or has no access.' + tag });
         }
         if (r.status === 429) {
-          return send(res, 429, { error: 'The AI service is busy or the free quota is used up. Please try again shortly.' });
+          return send(res, 429, { error: 'The AI service is busy or the free quota is used up. Please try again shortly.' + tag });
         }
         if (r.status === 400) {
-          return send(res, 502, { error: 'The AI request was rejected. Check GEMINI_API_KEY and the model name (GEMINI_MODEL).' });
+          return send(res, 502, { error: 'The AI request was rejected. Check GEMINI_API_KEY and the model name (GEMINI_MODEL).' + tag });
         }
-        return send(res, 503, { error: 'The AI service is having problems. Please try again later.' });
+        return send(res, 503, { error: 'The AI service is having problems. Please try again later.' + tag });
       }
 
       const data = await r.json();
