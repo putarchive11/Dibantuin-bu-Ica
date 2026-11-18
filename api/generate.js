@@ -7,7 +7,7 @@
  *
  * Environment variables (pilih salah satu penyedia AI):
  *   GEMINI_API_KEY     API key gratis dari aistudio.google.com (jika diisi, Gemini dipakai)
- *   GEMINI_MODEL       (opsional) default: gemini-2.5-flash
+ *   GEMINI_MODEL       (opsional) default: gemini-3.8-flash
  *   ANTHROPIC_API_KEY  API key dari console.anthropic.com (dipakai jika GEMINI_API_KEY kosong)
  *   ANTHROPIC_MODEL    (opsional) default: claude-haiku-5-5
  *   ACCESS_CODE        (disarankan) kode akses agar kredit API tidak disalahgunakan
@@ -17,8 +17,9 @@
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const GEMINI_FALLBACK_MODEL = 'gemini-flash-latest';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+// Urutan model cadangan jika model utama tidak tersedia (404).
+const GEMINI_FALLBACKS = ['gemini-flash-latest', 'gemini-3.6-flash'];
 
 const POSITIVE = [
   'Enthusiastic', 'Positive', 'Shows initiative', 'Committed', 'Responsible', 'Articulate',
@@ -236,8 +237,8 @@ async function handler(req, res) {
 
     if (geminiKey) {
       const callGemini = (model) => {
-        const generationConfig = { maxOutputTokens: 4096, responseMimeType: 'application/json' };
-        if (/flash/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        const generationConfig = { maxOutputTokens: 8192, responseMimeType: 'application/json' };
+        if (/2\.5/.test(model) && /flash/i.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
         return fetch(GEMINI_API_URL + encodeURIComponent(model) + ':generateContent', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': geminiKey },
@@ -251,10 +252,10 @@ async function handler(req, res) {
       };
 
       let r = await callGemini(GEMINI_MODEL);
-      // Model tidak ditemukan / sudah pensiun: coba alias model Flash terbaru.
-      if ((r.status === 404 || r.status === 400) && GEMINI_MODEL !== GEMINI_FALLBACK_MODEL) {
-        const probe = await r.clone().text().catch(() => '');
-        if (r.status === 404 || /model/i.test(probe)) r = await callGemini(GEMINI_FALLBACK_MODEL);
+      // Model tidak tersedia (404): coba model cadangan satu per satu.
+      for (const fb of GEMINI_FALLBACKS) {
+        if (r.status !== 404 || fb === GEMINI_MODEL) continue;
+        r = await callGemini(fb);
       }
       // Server Gemini sibuk sesaat: coba sekali lagi.
       if (r.status === 503 || r.status === 500) r = await callGemini(GEMINI_MODEL);
