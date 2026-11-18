@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Report Card Comments Generator</title>
+  <meta name="description" content="Write personalized, varied report card comments in seconds with the help of AI.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="hero">
+    <div class="hero__inner">
+      <p class="hero__eyebrow">Teacher toolkit</p>
+      <h1><span class="hero__ai">AI</span> Report Card Comments Generator</h1>
+      <p class="hero__sub">Pick a student's qualities and get personal, different comments every time.</p>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ========== FORM ========== -->
+    <form id="form" class="card" novalidate autocomplete="off">
+      <div class="row row--2">
+        <div class="field">
+          <label for="name">Student Name <b aria-hidden="true">*</b></label>
+          <input id="name" name="name" type="text" maxlength="60" placeholder="e.g. Udin" required>
+        </div>
+        <div class="field">
+          <label for="pronoun">Preferred Pronoun <b aria-hidden="true">*</b></label>
+          <select id="pronoun" name="pronoun" required>
+            <option value="" disabled selected>Select…</option>
+            <option value="He">He</option>
+            <option value="She">She</option>
+            <option value="They">They</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row row--2">
+        <div class="field">
+          <label for="level">Grade Level</label>
+          <select id="level">
+            <option value="SD">Elementary School</option>
+            <option value="SMP">Junior High School</option>
+            <option value="SMA">Senior High School</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tone">Tone</label>
+          <select id="tone">
+            <option value="warm">Warm &amp; encouraging</option>
+            <option value="formal">Formal &amp; professional</option>
+            <option value="direct">Direct &amp; honest</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row row--2">
+        <div class="field">
+          <label for="length">Comment Length</label>
+          <select id="length">
+            <option value="short">Short (~50 words)</option>
+            <option value="medium" selected>Medium (~80 words)</option>
+            <option value="long">Long (~125 words)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="variations">Number of Versions</label>
+          <select id="variations">
+            <option value="1">1 version</option>
+            <option value="2">2 versions</option>
+            <option value="3" selected>3 versions</option>
+          </select>
+        </div>
+      </div>
+
+      <fieldset class="field">
+        <legend>Positive Attributes <b aria-hidden="true">*</b> <small id="posCount" class="muted"></small></legend>
+        <div id="positives" class="chips" role="group" aria-label="Positive attributes"></div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Areas of Improvement</legend>
+        <div id="areas" class="chips chips--warn" role="group" aria-label="Areas of improvement"></div>
+      </fieldset>
+
+      <div class="field">
+        <label for="notes">Additional Notes <span class="muted">(optional)</span></label>
+        <textarea id="notes" rows="3" maxlength="300" placeholder="e.g. Math grades improved this semester; active in the scouts."></textarea>
+        <small class="muted counter"><span id="notesCount">0</span>/300</small>
+      </div>
+
+      <p id="formError" class="error" role="alert" hidden></p>
+
+      <div class="actions">
+        <button id="generateBtn" type="submit" class="btn btn--primary">
+          <span class="btn__label">Generate Comment</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+        <button id="resetBtn" type="button" class="btn btn--ghost">Reset</button>
+      </div>
+    </form>
+
+    <!-- ========== RESULT ========== -->
+    <section class="card result" aria-labelledby="resultTitle">
+      <div class="result__head">
+        <h2 id="resultTitle">Comment</h2>
+        <small id="wordCount" class="muted" aria-live="polite"></small>
+      </div>
+
+      <div id="tabs" class="tabs" role="tablist" aria-label="Comment versions" hidden></div>
+
+      <div id="empty" class="empty">
+        <div class="empty__icon" aria-hidden="true">✍️</div>
+        <p>Your comment will appear here.</p>
+        <p class="muted">Fill in the student details on the left, then click <strong>Generate Comment</strong>.</p>
+      </div>
+
+      <div id="skeleton" class="skeleton" hidden aria-hidden="true">
+        <span></span><span></span><span></span><span class="short"></span>
+      </div>
+
+      <div id="editorWrap" hidden>
+        <textarea id="editor" class="editor" rows="8" aria-label="Comment text (editable)"></textarea>
+        <p class="hint muted">You can edit this comment directly. Please review it before adding it to the report card.</p>
+
+        <div class="toolbar">
+          <button id="copyBtn" type="button" class="btn btn--soft">Copy</button>
+          <button id="saveBtn" type="button" class="btn btn--soft">Save to list</button>
+          <button id="printBtn" type="button" class="btn btn--soft">Print</button>
+          <button id="regenBtn" type="button" class="btn btn--soft">Regenerate</button>
+        </div>
+      </div>
+
+      <div class="history" id="historyBox" hidden>
+        <div class="history__head">
+          <h3>Saved comments <span id="historyCount" class="muted"></span></h3>
+          <div class="history__actions">
+            <button id="copyAllBtn" type="button" class="link">Copy all</button>
+            <button id="clearAllBtn" type="button" class="link link--danger">Delete all</button>
+          </div>
+        </div>
+        <ul id="historyList" class="history__list"></ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Comments are AI-generated drafts. Always review and adjust them before using them in a report card.</p>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- Access code dialog (shown only when the server asks for it) -->
+  <dialog id="codeDialog" class="dialog">
+    <form method="dialog" id="codeForm">
+      <h3>Access code</h3>
+      <p class="muted" id="codeHint">Enter the access code to use this generator.</p>
+      <input id="codeInput" type="password" autocomplete="off" placeholder="Access code" aria-label="Access code">
+      <div class="actions">
+        <button type="button" id="codeCancel" class="btn btn--ghost">Cancel</button>
+        <button type="submit" class="btn btn--primary">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Print-only area -->
+  <div id="printArea" aria-hidden="true">
+    <h2 id="printName"></h2>
+    <p id="printText"></p>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

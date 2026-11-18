@@ -1,0 +1,10 @@
+{
+  "name": "generator-komentar-rapor-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generator komentar rapor berbasis AI (frontend statis + serverless function ke Claude API).",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
