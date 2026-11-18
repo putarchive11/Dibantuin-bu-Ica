@@ -5,15 +5,19 @@
  * Menerima pilihan atribut siswa, memanggil Claude API, mengembalikan
  * { comments: [ "...", "..." ] }.
  *
- * Environment variables:
- *   ANTHROPIC_API_KEY  (wajib)  API key dari console.anthropic.com
+ * Environment variables (pilih salah satu penyedia AI):
+ *   GEMINI_API_KEY     API key gratis dari aistudio.google.com (jika diisi, Gemini dipakai)
+ *   GEMINI_MODEL       (opsional) default: gemini-2.5-flash
+ *   ANTHROPIC_API_KEY  API key dari console.anthropic.com (dipakai jika GEMINI_API_KEY kosong)
  *   ANTHROPIC_MODEL    (opsional) default: claude-haiku-5-5
  *   ACCESS_CODE        (disarankan) kode akses agar kredit API tidak disalahgunakan
  *   ALLOWED_ORIGIN     (opsional) mis. https://rapor.domainmu.com — batasi CORS
  */
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-5-5';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 const POSITIVE = [
   'Enthusiastic', 'Positive', 'Shows initiative', 'Committed', 'Responsible', 'Articulate',
@@ -196,9 +200,10 @@ async function handler(req, res) {
     return send(res, 405, { error: 'Method not allowed.' });
   }
 
+  const geminiKey = process.env.GEMINI_API_KEY;
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return send(res, 500, { error: 'Server is not configured (ANTHROPIC_API_KEY is missing).' });
+  if (!geminiKey && !apiKey) {
+    return send(res, 500, { error: 'Server is not configured (set GEMINI_API_KEY or ANTHROPIC_API_KEY).' });
   }
 
   const requiredCode = process.env.ACCESS_CODE;
@@ -226,40 +231,79 @@ async function handler(req, res) {
   const timer = setTimeout(() => controller.abort(), 25000);
 
   try {
-    const r = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 1500,
-        system,
-        messages: [{ role: 'user', content: user }]
-      }),
-      signal: controller.signal
-    });
+    let text = '';
 
-    if (!r.ok) {
-      if (r.status === 401 || r.status === 403) {
-        return send(res, 500, { error: 'The Anthropic API key is invalid or has no access.' });
+    if (geminiKey) {
+      const url = GEMINI_API_URL + encodeURIComponent(GEMINI_MODEL) + ':generateContent';
+      const generationConfig = { maxOutputTokens: 4096, responseMimeType: 'application/json' };
+      if (/flash/i.test(GEMINI_MODEL)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': geminiKey
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: 'user', parts: [{ text: user }] }],
+          generationConfig
+        }),
+        signal: controller.signal
+      });
+
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          return send(res, 500, { error: 'The Gemini API key is invalid or has no access.' });
+        }
+        if (r.status === 429) {
+          return send(res, 429, { error: 'The AI service is busy or the free quota is used up. Please try again shortly.' });
+        }
+        if (r.status === 400) {
+          return send(res, 502, { error: 'The AI request was rejected. Check GEMINI_API_KEY and the model name (GEMINI_MODEL).' });
+        }
+        return send(res, 503, { error: 'The AI service is having problems. Please try again later.' });
       }
-      if (r.status === 429) {
-        return send(res, 429, { error: 'The AI service is busy. Please try again shortly.' });
+
+      const data = await r.json();
+      const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+      text = parts.filter((p) => p && typeof p.text === 'string').map((p) => p.text).join('');
+    } else {
+      const r = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 1500,
+          system,
+          messages: [{ role: 'user', content: user }]
+        }),
+        signal: controller.signal
+      });
+
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          return send(res, 500, { error: 'The Anthropic API key is invalid or has no access.' });
+        }
+        if (r.status === 429) {
+          return send(res, 429, { error: 'The AI service is busy. Please try again shortly.' });
+        }
+        if (r.status === 400) {
+          return send(res, 502, { error: 'The AI request was rejected. Check the model name (ANTHROPIC_MODEL) and your API credit balance.' });
+        }
+        return send(res, 503, { error: 'The AI service is having problems. Please try again later.' });
       }
-      if (r.status === 400) {
-        return send(res, 502, { error: 'The AI request was rejected. Check the model name (ANTHROPIC_MODEL) and your API credit balance.' });
-      }
-      return send(res, 503, { error: 'The AI service is having problems. Please try again later.' });
+
+      const data = await r.json();
+      text = (data.content || [])
+        .filter((b) => b && b.type === 'text')
+        .map((b) => b.text)
+        .join('');
     }
-
-    const data = await r.json();
-    const text = (data.content || [])
-      .filter((b) => b && b.type === 'text')
-      .map((b) => b.text)
-      .join('');
 
     const comments = extractComments(text, checked.value.variations);
     if (comments.length === 0) {
