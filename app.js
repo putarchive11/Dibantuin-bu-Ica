@@ -150,7 +150,7 @@
     el.generateBtn.disabled = on;
     el.regenBtn.disabled = on;
     el.generateBtn.classList.toggle('is-loading', on);
-    el.generateBtn.querySelector('.btn__label').textContent = on ? 'Writing…' : 'Generate Comment';
+    el.generateBtn.querySelector('.btn__label').textContent = on ? 'Lagi mikir…' : 'Generate Comment';
     if (on) {
       el.empty.hidden = true;
       el.editorWrap.hidden = true;

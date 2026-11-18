@@ -286,3 +286,5 @@ textarea { resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+.loading-text { margin: 0 0 14px; font-weight: 600; color: var(--muted, #5b6b7a); text-align: center; }
